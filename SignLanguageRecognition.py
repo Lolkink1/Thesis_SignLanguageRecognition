@@ -129,7 +129,7 @@ def train_lstm_network():
     model.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['categorical_accuracy'])  # Compile neural model
     model.fit(X_train, Y_train, epochs=300, callbacks=[tb_callback])  # fit model
     model.save('action.h5')
-    return
+    return model
 
 
 #### Evaluation (confusion matrix and accuracy)
@@ -140,7 +140,7 @@ def train_lstm_network():
 #accuracy_score(ytrue, yhat)
 
 
-def activate_slr():
+def activate_slr(model):
     # Detection variables
     sequence = []
     sentence = []
@@ -159,8 +159,7 @@ def activate_slr():
             keypoints = extract_keypoints(results)  # Extract key points from detections
             sequence.append(keypoints)  # append keypoints to sequence
             sequence = sequence[-30:]  # Grab last 30 frames
-            model = Sequential()  # instantiating the sequence (sequential api)
-            model.load_weights('action.h5')  # Load trained model
+            #model.load_weights('action.h5')  # Load trained model
 
             if len(sequence) == 30:  # if the length of the sequence is 30
                 res = model.predict(np.expand_dims(sequence, axis=0))[0]  # run prediction for 1 sequence
@@ -192,6 +191,6 @@ def activate_slr():
 
 #### Menu
 #collect_keypoints()
-#train_lstm_network()
-activate_slr()
+trained_model = train_lstm_network()
+activate_slr(trained_model)
 
