@@ -4,6 +4,9 @@ import os
 from matplotlib import pyplot as plt
 import time
 import mediapipe as mp
+import kivy
+kivy.require('1.10.0')
+
 from sklearn.model_selection import train_test_split  # creates training partitions
 from tensorflow.keras.utils import to_categorical  # covert data into encoded
 from tensorflow.keras.models import Sequential  # to create  a sequential nueral network
@@ -11,16 +14,28 @@ from tensorflow.keras.layers import LSTM, Dense  # LSTM component to build model
 from tensorflow.keras.callbacks import TensorBoard  # for logging and tracking
 from sklearn.metrics import multilabel_confusion_matrix, accuracy_score  # for evaluation
 
+from kivy.app import App  # represents the window instance of the app
+from kivy.uix.label import Label  # Label widget is for rendering text
+from kivy.uix.floatlayout import FloatLayout  # to work with FloatLayout
+from kivy.uix.scatter import Scatter
+from kivy.uix.textinput import TextInput  # box for editable plain text
+from kivy.uix.boxlayout import BoxLayout  # BoxLayout arranges widgets in either
+from kivy.uix.widget import Widget
+from kivy.graphics import Rectangle, Color  # Canvas
+from kivy.uix.button import Button
+from kivy.lang import Builder
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.properties import ObjectProperty
+from kivy.uix.popup import Popup
+
 mp_holistic = mp.solutions.holistic  # Holistic model
 mp_drawing = mp.solutions.drawing_utils  # Drawing utilities
 
 DATA_PATH = os.path.join('MP_Data')  # Path for exported data, numpy arrays
-actions = np.array(['hello', 'thanks', 'iloveyou'])  # Actions that we try to detect
+actions = np.array(['hello', 'thanks', 'iloveyou'])  # Actions to detect
 no_sequences = 30  # Thirty videos worth of data
 sequence_length = 30  # Videos are going to be 30 frames in length
 start_folder = 30  # Folder start
-
-
 def mediapipe_detection(image, model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # bgr to rgb conversion
     image.flags.writeable = False  # set image to not writable
@@ -28,8 +43,6 @@ def mediapipe_detection(image, model):
     image.flags.writeable = True  # set image to writable
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # rgb to bgr conversion
     return image, results
-
-
 def draw_landmarks(image, results):
     mp_drawing.draw_landmarks(image, results.face_landmarks, mp_holistic.FACEMESH_TESSELATION,
                               mp_drawing.DrawingSpec(color=(80, 110, 10), thickness=1, circle_radius=1),
@@ -47,8 +60,6 @@ def draw_landmarks(image, results):
                               mp_drawing.DrawingSpec(color=(121, 22, 76), thickness=2, circle_radius=4),
                               mp_drawing.DrawingSpec(color=(80, 256, 121), thickness=2,
                                                      circle_radius=2))  # draw right-hand landmarks
-
-
 def extract_keypoints(results):
     face = np.array([[res.x, res.y, res.z] for res in
                      results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468 * 3)
@@ -60,8 +71,6 @@ def extract_keypoints(results):
                    results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(
         21 * 3)
     return np.concatenate([pose, face, lh, rh])
-
-
 def collect_keypoints():
     ##### Collect Keypoint Sequences
     cap = cv2.VideoCapture(0)
@@ -94,8 +103,6 @@ def collect_keypoints():
         cap.release()
         cv2.destroyAllWindows()
     return
-
-
 def train_lstm_network():
     ##### Pre-process data and create labels
     label_map = {label: num for num, label in enumerate(actions)}
@@ -130,16 +137,12 @@ def train_lstm_network():
     model.fit(X_train, Y_train, epochs=300, callbacks=[tb_callback])  # fit model
     model.save('action.h5')
     return model
-
-
 #### Evaluation (confusion matrix and accuracy)
 #yhat = model.predict(X_test)  # predict values
 #ytrue = np.argmax(Y_test, axis=1).tolist()
 #yhat = np.argmax(yhat, axis=1).tolist()
 #multilabel_confusion_matrix(ytrue, yhat)
 #accuracy_score(ytrue, yhat)
-
-
 def activate_slr(model):
     # Detection variables
     sequence = []
@@ -189,8 +192,78 @@ def activate_slr(model):
     return
 
 
+class WindowManager(ScreenManager):
+    pass
+
+
+class MainWindow(Screen):
+    current = ""
+
+    def teachlangBtn(self):
+        screenmenu.current = "teachlang"
+
+    def teachvocBtn(self):
+        screenmenu.current = "teachvoc"
+
+    def exitBtn(self):
+        screenmenu.current = "exit"
+
+
+
+class TeachVocWindow(Screen):
+
+    def loginBtn(self):
+        screenmenu.current = "teachlang"
+
+    def createBtn(self):
+        screenmenu.current = "teachlang"
+
+    def reset(self):
+        screenmenu.current = "teachlang"
+
+
+class TeachLangWindow(Screen):
+    email = ObjectProperty(None)
+    password = ObjectProperty(None)
+
+    def loginBtn(self):
+        screenmenu.current = "teachlang"
+
+    def createBtn(self):
+        screenmenu.current = "teachlang"
+
+    def reset(self):
+        screenmenu.current = "teachlang"
+
+
+
+
+kv = Builder.load_file("my.kv")
+screenmenu = WindowManager()
+
+screens = [MainWindow(name="main"), TeachVocWindow(name="teachvoc"), TeachLangWindow(name="teachlang")]
+for screen in screens:
+    screenmenu.add_widget(screen)
+screenmenu.current = "main"
+
+
+class GUI(App):
+    # This returns the content needed in the window
+    def build(self):
+        return screenmenu
+
+
+GUI().run()
+
+
+
+
+
+
+
+
 #### Menu
 #collect_keypoints()
-trained_model = train_lstm_network()
-activate_slr(trained_model)
+#trained_model = train_lstm_network()
+#activate_slr(trained_model)
 
