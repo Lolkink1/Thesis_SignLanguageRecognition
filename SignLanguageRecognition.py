@@ -3,9 +3,12 @@ import numpy as np
 import os
 from matplotlib import pyplot as plt
 import time
+import sys
 import mediapipe as mp
-import kivy
-kivy.require('1.10.0')
+from PyQt5.uic import loadUi
+from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
+import sys
 
 from sklearn.model_selection import train_test_split  # creates training partitions
 from tensorflow.keras.utils import to_categorical  # covert data into encoded
@@ -14,23 +17,9 @@ from tensorflow.keras.layers import LSTM, Dense  # LSTM component to build model
 from tensorflow.keras.callbacks import TensorBoard  # for logging and tracking
 from sklearn.metrics import multilabel_confusion_matrix, accuracy_score  # for evaluation
 
-from kivy.app import App  # represents the window instance of the app
-from kivy.uix.label import Label  # Label widget is for rendering text
-from kivy.uix.floatlayout import FloatLayout  # to work with FloatLayout
-from kivy.uix.scatter import Scatter
-from kivy.uix.textinput import TextInput  # box for editable plain text
-from kivy.uix.boxlayout import BoxLayout  # BoxLayout arranges widgets in either
-from kivy.uix.widget import Widget
-from kivy.graphics import Rectangle, Color  # Canvas
-from kivy.uix.button import Button
-from kivy.lang import Builder
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.properties import ObjectProperty
-from kivy.uix.popup import Popup
 
 mp_holistic = mp.solutions.holistic  # Holistic model
 mp_drawing = mp.solutions.drawing_utils  # Drawing utilities
-
 DATA_PATH = os.path.join('MP_Data')  # Path for exported data, numpy arrays
 actions = np.array(['hello', 'thanks', 'iloveyou'])  # Actions to detect
 no_sequences = 30  # Thirty videos worth of data
@@ -192,72 +181,71 @@ def activate_slr(model):
     return
 
 
-class WindowManager(ScreenManager):
-    pass
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super(MainWindow, self).__init__()
+        loadUi("Main.ui", self)
+        self.teachvocButton.clicked.connect(self.gotoTeachNewVocWindow)
+
+    def gotoTeachNewVocWindow(self):
+        widget.setCurrentIndex(1)
 
 
-class MainWindow(Screen):
-    current = ""
+class TeachNewVocWindow(QMainWindow):
+    def __init__(self):
+        super(TeachNewVocWindow, self).__init__()
+        loadUi("TeachNewVoc.ui", self)
+        self.backButton.clicked.connect(self.gotoMainWindow)
+        self.languageTable.setColumnWidth(0, 220)
+        self.languageTable.setColumnWidth(1, 200)
+        self.languageTable.setColumnWidth(2, 150)
+        self.languageTable.setColumnWidth(3, 150)
+        self.loadData()
 
-    def teachlangBtn(self):
-        screenmenu.current = "teachlang"
+    def loadData(self):
+        languages = []
+        files = os.listdir(os.path.join('SignLanguages'))
+        for filename in files:
+            if os.path.exists(os.path.join('SignLanguages', filename, 'MP_Data')):
+                data = os.listdir(os.path.join('SignLanguages', filename, 'MP_Data'))
+                totalVoc = 0
+                for vocabulary in data:
+                    totalVoc += 1
+            else:
+                totalVoc = 0
+            languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei", "Edit name": "n/a"})
 
-    def teachvocBtn(self):
-        screenmenu.current = "teachvoc"
+        row = 0
+        self.languageTable.setRowCount(len(languages))
+        for language in languages:
+            self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
+            self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
+            self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+            self.languageTable.setItem(row, 3, QtWidgets.QTableWidgetItem(language["Edit name"]))
+            row = row+1
 
-    def exitBtn(self):
-        screenmenu.current = "exit"
-
-
-
-class TeachVocWindow(Screen):
-
-    def loginBtn(self):
-        screenmenu.current = "teachlang"
-
-    def createBtn(self):
-        screenmenu.current = "teachlang"
-
-    def reset(self):
-        screenmenu.current = "teachlang"
-
-
-class TeachLangWindow(Screen):
-    email = ObjectProperty(None)
-    password = ObjectProperty(None)
-
-    def loginBtn(self):
-        screenmenu.current = "teachlang"
-
-    def createBtn(self):
-        screenmenu.current = "teachlang"
-
-    def reset(self):
-        screenmenu.current = "teachlang"
+    def gotoMainWindow(self):
+        widget.setCurrentIndex(0)
 
 
+app = QApplication(sys.argv)
+widget = QtWidgets.QStackedWidget()
+mainwindow = MainWindow()
+teachnewvoc = TeachNewVocWindow()
+widget.addWidget(mainwindow)
+widget.addWidget(teachnewvoc)
+widget.setFixedWidth(829)
+widget.setFixedHeight(546)
+widget.show()
 
 
-kv = Builder.load_file("my.kv")
-screenmenu = WindowManager()
-
-screens = [MainWindow(name="main"), TeachVocWindow(name="teachvoc"), TeachLangWindow(name="teachlang")]
-for screen in screens:
-    screenmenu.add_widget(screen)
-screenmenu.current = "main"
+print("end")
 
 
-class GUI(App):
-    # This returns the content needed in the window
-    def build(self):
-        return screenmenu
-
-
-GUI().run()
-
-
-
-
+try:
+    sys.exit(app.exec_())
+except:
+    print("Exiting")
 
 
 
