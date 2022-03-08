@@ -1,13 +1,17 @@
 import cv2
 import numpy as np
 import os
+
+from PyQt5.QtGui import QImage, QPixmap, QColor
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
 from matplotlib import pyplot as plt
 import time
 import sys
 import mediapipe as mp
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QPushButton
+from PyQt5.QtCore import QTimer, QDateTime
 import sys
 
 from sklearn.model_selection import train_test_split  # creates training partitions
@@ -25,6 +29,8 @@ actions = np.array(['hello', 'thanks', 'iloveyou'])  # Actions to detect
 no_sequences = 30  # Thirty videos worth of data
 sequence_length = 30  # Videos are going to be 30 frames in length
 start_folder = 30  # Folder start
+
+
 def mediapipe_detection(image, model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # bgr to rgb conversion
     image.flags.writeable = False  # set image to not writable
@@ -32,6 +38,8 @@ def mediapipe_detection(image, model):
     image.flags.writeable = True  # set image to writable
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # rgb to bgr conversion
     return image, results
+
+
 def draw_landmarks(image, results):
     mp_drawing.draw_landmarks(image, results.face_landmarks, mp_holistic.FACEMESH_TESSELATION,
                               mp_drawing.DrawingSpec(color=(80, 110, 10), thickness=1, circle_radius=1),
@@ -49,6 +57,8 @@ def draw_landmarks(image, results):
                               mp_drawing.DrawingSpec(color=(121, 22, 76), thickness=2, circle_radius=4),
                               mp_drawing.DrawingSpec(color=(80, 256, 121), thickness=2,
                                                      circle_radius=2))  # draw right-hand landmarks
+
+
 def extract_keypoints(results):
     face = np.array([[res.x, res.y, res.z] for res in
                      results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468 * 3)
@@ -60,6 +70,8 @@ def extract_keypoints(results):
                    results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(
         21 * 3)
     return np.concatenate([pose, face, lh, rh])
+
+
 def collect_keypoints():
     ##### Collect Keypoint Sequences
     cap = cv2.VideoCapture(0)
@@ -92,6 +104,8 @@ def collect_keypoints():
         cap.release()
         cv2.destroyAllWindows()
     return
+
+
 def train_lstm_network():
     ##### Pre-process data and create labels
     label_map = {label: num for num, label in enumerate(actions)}
@@ -186,21 +200,34 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__()
         loadUi("Main.ui", self)
         self.teachvocButton.clicked.connect(self.gotoTeachNewVocWindow)
+        self.activateSLRButton.clicked.connect(self.ChooseLanguageSLRWindow)
 
     def gotoTeachNewVocWindow(self):
         widget.setCurrentIndex(1)
 
-
+    def ChooseLanguageSLRWindow(self):
+        widget.setCurrentIndex(8)
 class TeachNewVocWindow(QMainWindow):
     def __init__(self):
         super(TeachNewVocWindow, self).__init__()
         loadUi("TeachNewVoc.ui", self)
         self.backButton.clicked.connect(self.gotoMainWindow)
+        self.addLangButton.clicked.connect(self.gotoAddLanguageWindow)
         self.languageTable.setColumnWidth(0, 220)
         self.languageTable.setColumnWidth(1, 200)
         self.languageTable.setColumnWidth(2, 150)
-        self.languageTable.setColumnWidth(3, 150)
-        self.loadData()
+        self.languageTable.setColumnWidth(3, 100)
+
+        self.editbtn = QPushButton(self.languageTable)
+        self.editbtn.setText('edit')
+        self.editbtn.clicked.connect(self.gotoEditLanguageWindow)
+
+        self.languageTable.cellDoubleClicked.connect(self.gotoChooseVocabularyWindow)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.loadData)
+        self.timer.setInterval(2000)
+        self.timer.start()
 
     def loadData(self):
         languages = []
@@ -213,7 +240,7 @@ class TeachNewVocWindow(QMainWindow):
                     totalVoc += 1
             else:
                 totalVoc = 0
-            languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei", "Edit name": "n/a"})
+            languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei"})
 
         row = 0
         self.languageTable.setRowCount(len(languages))
@@ -221,25 +248,384 @@ class TeachNewVocWindow(QMainWindow):
             self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
             self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
             self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
-            self.languageTable.setItem(row, 3, QtWidgets.QTableWidgetItem(language["Edit name"]))
+            self.languageTable.setCellWidget(row, 3, self.editbtn)
             row = row+1
 
     def gotoMainWindow(self):
         widget.setCurrentIndex(0)
 
+    def gotoAddLanguageWindow(self):
+        widget.setCurrentIndex(2)
+
+    def gotoEditLanguageWindow(self):
+        widget.setCurrentIndex(3)
+
+    def gotoChooseVocabularyWindow(self, row, column):
+        item = self.languageTable.item(row, 0)
+        choosevocab.languageSel = item.text()
+        widget.setCurrentIndex(4)
+class AddLanguageWindow(QMainWindow):
+    def __init__(self):
+        super(AddLanguageWindow, self).__init__()
+        loadUi("insertLanguage.ui", self)
+        self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
+        self.addButton.clicked.connect(self.addLanguage)
+
+    def addLanguage(self):
+        input = self.languageInput.text()
+        if not os.path.exists(os.path.join('SignLanguages', input, 'MP_Data')):
+            os.mkdir(os.path.join('SignLanguages', input))
+            os.mkdir(os.path.join('SignLanguages', input, 'MP_Data'))
+        widget.setCurrentIndex(1)
+
+    def gotoTeachNewVocWindow(self):
+        widget.setCurrentIndex(1)
+class EditLanguageWindow(QMainWindow):
+    def __init__(self):
+        super(EditLanguageWindow, self).__init__()
+        loadUi("editLanguage.ui", self)
+        self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
+        self.saveButton.clicked.connect(self.editLanguage)
+
+    def editLanguage(self):
+        input = self.languageInput.text()
+        if not os.path.exists(os.path.join('SignLanguages', input, 'MP_Data')):
+            os.mkdir(os.path.join('SignLanguages', input))
+            os.mkdir(os.path.join('SignLanguages', input, 'MP_Data'))
+        widget.setCurrentIndex(1)
+
+    def gotoTeachNewVocWindow(self):
+        widget.setCurrentIndex(1)
+class ChooseVocabularyWindow(QMainWindow):
+    def __init__(self):
+        super(ChooseVocabularyWindow, self).__init__()
+        loadUi("chooseVocabulary.ui", self)
+        self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
+        self.addVocButton.clicked.connect(self.gotoAddVocabularyWindow)
+        self.vocabularyTable.setColumnWidth(0, 220)
+        self.vocabularyTable.setColumnWidth(1, 200)
+        self.vocabularyTable.setColumnWidth(2, 150)
+        self.vocabularyTable.setColumnWidth(3, 100)
+
+        self.languageSel = ''
+
+        self.editbtn = QPushButton(self.vocabularyTable)
+        self.editbtn.setText('edit')
+        self.editbtn.clicked.connect(self.gotoEditVocabularyWindow)
+
+        self.vocabularyTable.cellDoubleClicked.connect(self.gotoTeachRecogWindow)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.loadDatavoc)
+        self.timer.setInterval(2000)
+        self.timer.start()
+
+    def loadDatavoc(self):
+        self.languagelabeltext = "Language: " + str(self.languageSel)
+        self.languagelabel.setText(self.languagelabeltext)
+        languages = []
+        if os.path.exists(os.path.join('SignLanguages', (self.languageSel), 'MP_Data')):
+            files = os.listdir(os.path.join('SignLanguages', (self.languageSel), 'MP_Data'))
+            for filename in files:
+                if os.path.exists(os.path.join('SignLanguages', (self.languageSel), 'MP_Data', filename)):
+                    data = os.listdir(os.path.join('SignLanguages', (self.languageSel), 'MP_Data', filename))
+                    totalVoc = 0
+                    for vocabulary in data:
+                        totalVoc += 1
+                else:
+                    totalVoc = 0
+                languages.append({"Vocabulary": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei"})
+
+        row = 0
+        self.vocabularyTable.setRowCount(len(languages))
+        for language in languages:
+            self.vocabularyTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Vocabulary"]))
+            self.vocabularyTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
+            self.vocabularyTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+            self.vocabularyTable.setCellWidget(row, 3, self.editbtn)
+            row = row + 1
+
+    def gotoTeachNewVocWindow(self):
+        widget.setCurrentIndex(1)
+
+    def gotoAddVocabularyWindow(self):
+        widget.setCurrentIndex(5)
+
+    def gotoEditVocabularyWindow(self):
+        widget.setCurrentIndex(6)
+
+    def gotoTeachRecogWindow(self, row, column):
+        item = self.vocabularyTable.item(row, 0)
+        teachUI.vocabularySel = item.text()
+        widget.setCurrentIndex(7)
+        teachUI.threadState = True
+class AddVocabularyWindow(QMainWindow):
+    def __init__(self):
+        super(AddVocabularyWindow, self).__init__()
+        loadUi("insertVocabulary.ui", self)
+        self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
+        self.addButton.clicked.connect(self.addVocabulary)
+
+    def addVocabulary(self):
+        input = self.vocabularyInput.text()
+        language = choosevocab.languageSel
+        if not os.path.exists(os.path.join('SignLanguages', language, 'MP_Data', input)):
+            os.mkdir(os.path.join('SignLanguages', language, 'MP_Data', input))
+        widget.setCurrentIndex(4)
+
+    def gotoChooseVocabularyWindow(self):
+        widget.setCurrentIndex(4)
+class EditVocabularyWindow(QMainWindow):
+    def __init__(self):
+        super(EditVocabularyWindow, self).__init__()
+        loadUi("editVocabulary.ui", self)
+        self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
+        self.saveButton.clicked.connect(self.editVocabulary)
+
+    def editVocabulary(self):
+        input = self.editvocabularyInput.text()
+        language = choosevocab.languageSel
+        if not os.path.exists(os.path.join('SignLanguages', language, 'MP_Data', input)):
+            os.mkdir(os.path.join('SignLanguages', language, 'MP_Data', input))
+        widget.setCurrentIndex(4)
+
+    def gotoChooseVocabularyWindow(self):
+        widget.setCurrentIndex(4)
+
+
+class TeachingThread(QThread):
+    changePixmap = pyqtSignal(QImage)
+
+    def run(self):
+        ##### Collect Keypoint Sequences
+        cap = cv2.VideoCapture(0)
+        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+            action = teachUI.vocabularySel
+            for sequence in range(no_sequences):  # Loop through all sequences (videos)
+                for frame_num in range(sequence_length):  # Loop through sequence length (frames)
+                    ret, frame = cap.read()  # Read camera feed
+                    image, results = mediapipe_detection(frame, holistic)  # Create detections
+                    draw_landmarks(image, results)  # Draw all landmarks
+                    if frame_num == 0:
+                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
+                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        h, w, ch = rgbImage.shape
+                        bytesPerLine = ch * w
+                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                        cv2.waitKey(2000)  # wait 2 sec for next sequence
+                    else:
+                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        h, w, ch = rgbImage.shape
+                        bytesPerLine = ch * w
+                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                    keypoints = extract_keypoints(results)  # Export keypoint data
+                    npy_path = os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence), str(frame_num))
+                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))):  # check the ACTION directory does not exist
+                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))  # create the directory
+                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action,  str(sequence)))):  # check the SEQUENCE directory does not exist
+                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence)))  # create the directory
+                    np.save(npy_path, keypoints)  # write the file
+                    self.changePixmap.emit(p)
+            cap.release()
+            cv2.destroyAllWindows()
+            widget.setCurrentIndex(4)
+            teachUI.threadState = False
+        return
+class TeachRecogWindow(QMainWindow):
+    def __init__(self):
+        super(TeachRecogWindow, self).__init__()
+        loadUi("teachUI.ui", self)
+        self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
+
+        grey = QPixmap(731, 361)  # create a grey pixmap
+        grey.fill(QColor('darkGray'))
+        self.image_label.setPixmap(grey)  # set the image to the grey pixmap
+
+        self.vocabularySel = ""
+        self.threadState = False
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.threadControl)
+        self.timer.setInterval(1000)
+        self.timer.start()
+
+        self.th = TeachingThread(self)
+        self.th.changePixmap.connect(self.setImage)
+
+    @pyqtSlot(QImage)
+    def setImage(self, image):
+        self.image_label.setPixmap(QPixmap.fromImage(image))
+
+    def threadControl(self):
+        if (self.threadState is True) & (self.th.isRunning() is False):
+            print("starting")
+            self.th.start()
+        elif (self.threadState is False) & (self.th.isRunning() is True):
+            print("terminating")
+            self.th.terminate()
+
+    def gotoChooseVocabularyWindow(self):
+        widget.setCurrentIndex(4)
+        self.threadState = False
+
+
+class ChooseLanguageSLRWindow(QMainWindow):
+    def __init__(self):
+        super(ChooseLanguageSLRWindow, self).__init__()
+        loadUi("chooseLanguageSLR.ui", self)
+        self.backButton.clicked.connect(self.gotoMainWindow)
+        self.languageTable.setColumnWidth(0, 220)
+        self.languageTable.setColumnWidth(1, 200)
+        self.languageTable.setColumnWidth(2, 150)
+
+        self.languageTable.cellDoubleClicked.connect(self.gotoslrUI)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.loadData)
+        self.timer.setInterval(2000)
+        self.timer.start()
+
+    def loadData(self):
+        languages = []
+        files = os.listdir(os.path.join('SignLanguages'))
+        for filename in files:
+            if os.path.exists(os.path.join('SignLanguages', filename, 'MP_Data')):
+                data = os.listdir(os.path.join('SignLanguages', filename, 'MP_Data'))
+                totalVoc = 0
+                for vocabulary in data:
+                    totalVoc += 1
+            else:
+                totalVoc = 0
+            languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei"})
+
+        row = 0
+        self.languageTable.setRowCount(len(languages))
+        for language in languages:
+            self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
+            self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
+            self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+            row = row+1
+
+    def gotoMainWindow(self):
+        widget.setCurrentIndex(0)
+
+    def gotoslrUI(self, row, column):
+        item = self.languageTable.item(row, 0)
+        slrUI.languageSel = item.text()
+        widget.setCurrentIndex(9)
+class slrThread(QThread):
+    changePixmap = pyqtSignal(QImage)
+
+    def run(self):
+        ##### Collect Keypoint Sequences
+        cap = cv2.VideoCapture(0)
+        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+            action = teachUI.vocabularySel
+            for sequence in range(no_sequences):  # Loop through all sequences (videos)
+                for frame_num in range(sequence_length):  # Loop through sequence length (frames)
+                    ret, frame = cap.read()  # Read camera feed
+                    image, results = mediapipe_detection(frame, holistic)  # Create detections
+                    draw_landmarks(image, results)  # Draw all landmarks
+                    if frame_num == 0:
+                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
+                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        h, w, ch = rgbImage.shape
+                        bytesPerLine = ch * w
+                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                        cv2.waitKey(2000)  # wait 2 sec for next sequence
+                    else:
+                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        h, w, ch = rgbImage.shape
+                        bytesPerLine = ch * w
+                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                    keypoints = extract_keypoints(results)  # Export keypoint data
+                    npy_path = os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence), str(frame_num))
+                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))):  # check the ACTION directory does not exist
+                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))  # create the directory
+                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action,  str(sequence)))):  # check the SEQUENCE directory does not exist
+                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence)))  # create the directory
+                    np.save(npy_path, keypoints)  # write the file
+                    self.changePixmap.emit(p)
+            cap.release()
+            cv2.destroyAllWindows()
+            widget.setCurrentIndex(4)
+            teachUI.threadState = False
+        return
+class slrWindow(QMainWindow):
+    def __init__(self):
+        super(slrWindow, self).__init__()
+        loadUi("slrUI.ui", self)
+        self.backButton.clicked.connect(self.gotoChooseLanguageSLRWindow)
+
+        grey = QPixmap(731, 361)  # create a grey pixmap
+        grey.fill(QColor('darkGray'))
+        self.image_label.setPixmap(grey)  # set the image to the grey pixmap
+
+        self.languageSel = ""
+        self.threadState = False
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.threadControl)
+        self.timer.setInterval(1000)
+        self.timer.start()
+
+        self.thslr = slrThread(self)
+        self.thslr.changePixmap.connect(self.setImage)
+
+    @pyqtSlot(QImage)
+    def setImage(self, image):
+        self.image_label.setPixmap(QPixmap.fromImage(image))
+
+    def threadControl(self):
+        if (self.threadState is True) & (self.thslr.isRunning() is False):
+            print("starting")
+            self.thslr.start()
+        elif (self.threadState is False) & (self.thslr.isRunning() is True):
+            print("terminating")
+            self.thslr.terminate()
+
+    def gotoChooseLanguageSLRWindow(self):
+        widget.setCurrentIndex(8)
+        self.threadState = False
+
+
 
 app = QApplication(sys.argv)
 widget = QtWidgets.QStackedWidget()
+
 mainwindow = MainWindow()
 teachnewvoc = TeachNewVocWindow()
+addnewlang = AddLanguageWindow()
+editnewlang = EditLanguageWindow()
+choosevocab = ChooseVocabularyWindow()
+addnewvoc = AddVocabularyWindow()
+editnewvoc = EditVocabularyWindow()
+teachUI = TeachRecogWindow()
+chooselangSLR = ChooseLanguageSLRWindow()
+slrUI = slrWindow()
+
 widget.addWidget(mainwindow)
 widget.addWidget(teachnewvoc)
+widget.addWidget(addnewlang)
+widget.addWidget(editnewlang)
+widget.addWidget(choosevocab)
+widget.addWidget(addnewvoc)
+widget.addWidget(editnewvoc)
+widget.addWidget(teachUI)
+widget.addWidget(chooselangSLR)
+widget.addWidget(slrUI)
+
 widget.setFixedWidth(829)
 widget.setFixedHeight(546)
 widget.show()
-
-
-print("end")
 
 
 try:
