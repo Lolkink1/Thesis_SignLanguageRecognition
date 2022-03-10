@@ -1,35 +1,38 @@
 import cv2
 import numpy as np
 import os
+import sys
+import pygame
+import multiprocessing
+import time
+import sys
+import mediapipe as mp
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 from PyQt5.QtGui import QImage, QPixmap, QColor
 from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
 from matplotlib import pyplot as plt
-import time
-import sys
-import mediapipe as mp
+from gtts import gTTS
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QPushButton
 from PyQt5.QtCore import QTimer, QDateTime
-import sys
-
 from sklearn.model_selection import train_test_split  # creates training partitions
 from tensorflow.keras.utils import to_categorical  # covert data into encoded
-from tensorflow.keras.models import Sequential  # to create  a sequential nueral network
+from tensorflow.keras.models import Sequential, load_model  # to create  a sequential nueral network
 from tensorflow.keras.layers import LSTM, Dense  # LSTM component to build model, allows to use action detection
 from tensorflow.keras.callbacks import TensorBoard  # for logging and tracking
+from tensorflow import keras
 from sklearn.metrics import multilabel_confusion_matrix, accuracy_score  # for evaluation
 
 
 mp_holistic = mp.solutions.holistic  # Holistic model
 mp_drawing = mp.solutions.drawing_utils  # Drawing utilities
 DATA_PATH = os.path.join('MP_Data')  # Path for exported data, numpy arrays
-actions = np.array(['hello', 'thanks', 'iloveyou'])  # Actions to detect
 no_sequences = 30  # Thirty videos worth of data
 sequence_length = 30  # Videos are going to be 30 frames in length
 start_folder = 30  # Folder start
-
+language = 'en'  # Language for text to speech
 
 def mediapipe_detection(image, model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # bgr to rgb conversion
@@ -72,49 +75,16 @@ def extract_keypoints(results):
     return np.concatenate([pose, face, lh, rh])
 
 
-def collect_keypoints():
-    ##### Collect Keypoint Sequences
-    cap = cv2.VideoCapture(0)
-    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-        for action in actions:  # Loop through all actions (signs)
-            for sequence in range(no_sequences):  # Loop through all sequences (videos)
-                for frame_num in range(sequence_length):  # Loop through sequence length (frames)
-                    ret, frame = cap.read()  # Read camera feed
-                    image, results = mediapipe_detection(frame, holistic)  # Create detections
-                    draw_landmarks(image, results)  # Draw all landmarks
-                    if frame_num == 0:
-                        cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
-                        cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
-                                    (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                        cv2.imshow('webcam_feed', image)  # Show to screen
-                        cv2.waitKey(2000)  # wait 2 sec for next sequence
-                    else:
-                        cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
-                                    (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                        cv2.imshow('webcam_feed', image)  # Show to screen
-                    keypoints = extract_keypoints(results)  # Export keypoint data
-                    npy_path = os.path.join(DATA_PATH, action, str(sequence), str(frame_num))
-                    if not (os.path.exists(os.path.join(DATA_PATH, action))):  # check the ACTION directory does not exist
-                        os.mkdir(os.path.join(DATA_PATH, action))  # create the directory
-                    if not (os.path.exists(os.path.join(DATA_PATH, action, str(sequence)))):  # check the SEQUENCE directory does not exist
-                        os.mkdir(os.path.join(DATA_PATH, action, str(sequence)))  # create the directory
-                    np.save(npy_path, keypoints)  # write the file
-                    if cv2.waitKey(10) & 0xFF == ord('q'):  # Break loop if user press q
-                        break
-        cap.release()
-        cv2.destroyAllWindows()
-    return
-
-
-def train_lstm_network():
+def train_lstm_network(trainactions):
     ##### Pre-process data and create labels
+    actions = np.array(trainactions)  # Actions to detect
     label_map = {label: num for num, label in enumerate(actions)}
     sequences, labels = [], []  # 2 bank arrays, sequences for feature data, labels for labels
     for action in actions:  # loop through all actions
         for sequence in range(no_sequences):  # loop through all sequences
             window = []  # to store all frames for a sequence
             for frame_num in range(sequence_length):  # loop through all frames
-                res = np.load(os.path.join(DATA_PATH, action, str(sequence), "{}.npy".format(frame_num)))  # load frames
+                res = np.load(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence), "{}.npy".format(frame_num)))  # load frames
                 window.append(res)  # add to window array
             sequences.append(window)  # add the video to the sequences array
             labels.append(label_map[action])  # add sequence to labels array
@@ -136,63 +106,102 @@ def train_lstm_network():
     model.add(Dense(32, activation='relu'))
     model.add(Dense(actions.shape[0], activation='softmax'))  # actions layer
 
-    model.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['categorical_accuracy'])  # Compile neural model
+    model.compile(optimizer='Adam', loss='categorical_crossentropy',
+                  metrics=['categorical_accuracy'])  # Compile neural model
     model.fit(X_train, Y_train, epochs=300, callbacks=[tb_callback])  # fit model
-    model.save('action.h5')
-    return model
+    model_name = os.path.join('Models', choosevocab.languageSel)
+    model.save(model_name)
+    return
+
+
+# def collect_keypoints():
+#     ##### Collect Keypoint Sequences
+#     cap = cv2.VideoCapture(0)
+#     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+#         for action in actions:  # Loop through all actions (signs)
+#             for sequence in range(no_sequences):  # Loop through all sequences (videos)
+#                 for frame_num in range(sequence_length):  # Loop through sequence length (frames)
+#                     ret, frame = cap.read()  # Read camera feed
+#                     image, results = mediapipe_detection(frame, holistic)  # Create detections
+#                     draw_landmarks(image, results)  # Draw all landmarks
+#                     if frame_num == 0:
+#                         cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
+#                         cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
+#                                     (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+#                         cv2.imshow('webcam_feed', image)  # Show to screen
+#                         cv2.waitKey(2000)  # wait 2 sec for next sequence
+#                     else:
+#                         cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
+#                                     (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+#                         cv2.imshow('webcam_feed', image)  # Show to screen
+#                     keypoints = extract_keypoints(results)  # Export keypoint data
+#                     npy_path = os.path.join(DATA_PATH, action, str(sequence), str(frame_num))
+#                     if not (os.path.exists(os.path.join(DATA_PATH, action))):  # check the ACTION directory does not exist
+#                         os.mkdir(os.path.join(DATA_PATH, action))  # create the directory
+#                     if not (os.path.exists(os.path.join(DATA_PATH, action, str(sequence)))):  # check the SEQUENCE directory does not exist
+#                         os.mkdir(os.path.join(DATA_PATH, action, str(sequence)))  # create the directory
+#                     np.save(npy_path, keypoints)  # write the file
+#                     if cv2.waitKey(10) & 0xFF == ord('q'):  # Break loop if user press q
+#                         break
+#         cap.release()
+#         cv2.destroyAllWindows()
+#     return
+
+
 #### Evaluation (confusion matrix and accuracy)
 #yhat = model.predict(X_test)  # predict values
 #ytrue = np.argmax(Y_test, axis=1).tolist()
 #yhat = np.argmax(yhat, axis=1).tolist()
 #multilabel_confusion_matrix(ytrue, yhat)
 #accuracy_score(ytrue, yhat)
-def activate_slr(model):
-    # Detection variables
-    sequence = []
-    sentence = []
-    predictions = []
-    threshold = 0.7
-
-    #### SLR
-    cap = cv2.VideoCapture(0)  # initialize the camera
-    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:  # Set mediapipe model
-        while cap.isOpened():  # While cam is opened
-            ret, frame = cap.read()  # Read frame
-            image, results = mediapipe_detection(frame, holistic)  # Make detections
-            draw_landmarks(image, results)  # draw landmarks
-
-            #### Prediction logic
-            keypoints = extract_keypoints(results)  # Extract key points from detections
-            sequence.append(keypoints)  # append keypoints to sequence
-            sequence = sequence[-30:]  # Grab last 30 frames
-            #model.load_weights('action.h5')  # Load trained model
-
-            if len(sequence) == 30:  # if the length of the sequence is 30
-                res = model.predict(np.expand_dims(sequence, axis=0))[0]  # run prediction for 1 sequence
-                predictions.append(np.argmax(res))  # append all predictions
-
-                #### Visualization logic
-                if np.unique(predictions[-10:])[0] == np.argmax(res):  # check that prediction is the same in last 10 frames
-                    if res[np.argmax(res)] > threshold:  # check if result is above threshold
-                        if len(sentence) > 0:  # check that sentence is not empty
-                            if actions[np.argmax(res)] != sentence[-1]:  # check that current detection is not the same as last detection
-                                sentence.append(actions[np.argmax(res)])  # append sentence
-                        else:
-                            sentence.append(actions[np.argmax(res)])  # append sentence  # append sentence
-
-                if len(sentence) > 5:  # if sentence is greater than 5 words
-                    sentence = sentence[-5:]  # grab last 5 values
-
-            cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)  # specify rectangle
-            cv2.putText(image, ' '.join(sentence), (3, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)  # Render sentence with space
-            cv2.imshow('webcam_feed', image)  # Show to screen
-
-            #### Break logic
-            if cv2.waitKey(10) & 0xFF == ord('q'):
-                break
-        cap.release()
-        cv2.destroyAllWindows()
-    return
+# def activate_slr(model):
+#
+#     # Detection variables
+#     sequence = []
+#     sentence = []
+#     predictions = []
+#     threshold = 0.7
+#
+#     #### SLR
+#     cap = cv2.VideoCapture(0)  # initialize the camera
+#     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:  # Set mediapipe model
+#         while cap.isOpened():  # While cam is opened
+#             ret, frame = cap.read()  # Read frame
+#             image, results = mediapipe_detection(frame, holistic)  # Make detections
+#             draw_landmarks(image, results)  # draw landmarks
+#
+#             #### Prediction logic
+#             keypoints = extract_keypoints(results)  # Extract key points from detections
+#             sequence.append(keypoints)  # append keypoints to sequence
+#             sequence = sequence[-30:]  # Grab last 30 frames
+#             #model.load_weights('action.h5')  # Load trained model
+#
+#             if len(sequence) == 30:  # if the length of the sequence is 30
+#                 res = model.predict(np.expand_dims(sequence, axis=0))[0]  # run prediction for 1 sequence
+#                 predictions.append(np.argmax(res))  # append all predictions
+#
+#                 #### Visualization logic
+#                 if np.unique(predictions[-10:])[0] == np.argmax(res):  # check that prediction is the same in last 10 frames
+#                     if res[np.argmax(res)] > threshold:  # check if result is above threshold
+#                         if len(sentence) > 0:  # check that sentence is not empty
+#                             if actions[np.argmax(res)] != sentence[-1]:  # check that current detection is not the same as last detection
+#                                 sentence.append(actions[np.argmax(res)])  # append sentence
+#                         else:
+#                             sentence.append(actions[np.argmax(res)])  # append sentence  # append sentence
+#
+#                 if len(sentence) > 5:  # if sentence is greater than 5 words
+#                     sentence = sentence[-5:]  # grab last 5 values
+#
+#             cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)  # specify rectangle
+#             cv2.putText(image, ' '.join(sentence), (3, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)  # Render sentence with space
+#             cv2.imshow('webcam_feed', image)  # Show to screen
+#
+#             #### Break logic
+#             if cv2.waitKey(10) & 0xFF == ord('q'):
+#                 break
+#         cap.release()
+#         cv2.destroyAllWindows()
+#     return
 
 
 class MainWindow(QMainWindow):
@@ -207,6 +216,8 @@ class MainWindow(QMainWindow):
 
     def ChooseLanguageSLRWindow(self):
         widget.setCurrentIndex(8)
+
+
 class TeachNewVocWindow(QMainWindow):
     def __init__(self):
         super(TeachNewVocWindow, self).__init__()
@@ -264,6 +275,8 @@ class TeachNewVocWindow(QMainWindow):
         item = self.languageTable.item(row, 0)
         choosevocab.languageSel = item.text()
         widget.setCurrentIndex(4)
+
+
 class AddLanguageWindow(QMainWindow):
     def __init__(self):
         super(AddLanguageWindow, self).__init__()
@@ -280,6 +293,8 @@ class AddLanguageWindow(QMainWindow):
 
     def gotoTeachNewVocWindow(self):
         widget.setCurrentIndex(1)
+
+
 class EditLanguageWindow(QMainWindow):
     def __init__(self):
         super(EditLanguageWindow, self).__init__()
@@ -296,6 +311,8 @@ class EditLanguageWindow(QMainWindow):
 
     def gotoTeachNewVocWindow(self):
         widget.setCurrentIndex(1)
+
+
 class ChooseVocabularyWindow(QMainWindow):
     def __init__(self):
         super(ChooseVocabularyWindow, self).__init__()
@@ -359,6 +376,8 @@ class ChooseVocabularyWindow(QMainWindow):
         teachUI.vocabularySel = item.text()
         widget.setCurrentIndex(7)
         teachUI.threadState = True
+
+
 class AddVocabularyWindow(QMainWindow):
     def __init__(self):
         super(AddVocabularyWindow, self).__init__()
@@ -375,6 +394,8 @@ class AddVocabularyWindow(QMainWindow):
 
     def gotoChooseVocabularyWindow(self):
         widget.setCurrentIndex(4)
+
+
 class EditVocabularyWindow(QMainWindow):
     def __init__(self):
         super(EditVocabularyWindow, self).__init__()
@@ -430,11 +451,15 @@ class TeachingThread(QThread):
                         os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence)))  # create the directory
                     np.save(npy_path, keypoints)  # write the file
                     self.changePixmap.emit(p)
+            files = os.listdir(os.path.join('SignLanguages', (choosevocab.languageSel), 'MP_Data'))
+            train_lstm_network(files)
             cap.release()
             cv2.destroyAllWindows()
             widget.setCurrentIndex(4)
             teachUI.threadState = False
         return
+
+
 class TeachRecogWindow(QMainWindow):
     def __init__(self):
         super(TeachRecogWindow, self).__init__()
@@ -517,51 +542,76 @@ class ChooseLanguageSLRWindow(QMainWindow):
         item = self.languageTable.item(row, 0)
         slrUI.languageSel = item.text()
         widget.setCurrentIndex(9)
-class slrThread(QThread):
+        slrUI.threadState = True
+
+
+class SlrThread(QThread):
     changePixmap = pyqtSignal(QImage)
 
     def run(self):
-        ##### Collect Keypoint Sequences
-        cap = cv2.VideoCapture(0)
-        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-            action = teachUI.vocabularySel
-            for sequence in range(no_sequences):  # Loop through all sequences (videos)
-                for frame_num in range(sequence_length):  # Loop through sequence length (frames)
-                    ret, frame = cap.read()  # Read camera feed
-                    image, results = mediapipe_detection(frame, holistic)  # Create detections
-                    draw_landmarks(image, results)  # Draw all landmarks
-                    if frame_num == 0:
-                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
-                        cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
-                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        h, w, ch = rgbImage.shape
-                        bytesPerLine = ch * w
-                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
-                        cv2.waitKey(2000)  # wait 2 sec for next sequence
-                    else:
-                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
-                        rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        h, w, ch = rgbImage.shape
-                        bytesPerLine = ch * w
-                        convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-                        p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
-                    keypoints = extract_keypoints(results)  # Export keypoint data
-                    npy_path = os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence), str(frame_num))
-                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))):  # check the ACTION directory does not exist
-                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action))  # create the directory
-                    if not (os.path.exists(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action,  str(sequence)))):  # check the SEQUENCE directory does not exist
-                        os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence)))  # create the directory
-                    np.save(npy_path, keypoints)  # write the file
-                    self.changePixmap.emit(p)
+        # Detection variables
+        sequence = []
+        sentence = []
+        predictions = []
+        threshold = 0.7
+        slractions = os.listdir(os.path.join('SignLanguages', (slrUI.languageSel), 'MP_Data'))
+        actions = np.array(slractions)  # Actions to detect
+        pygame.mixer.init()
+
+        #### SLR
+        cap = cv2.VideoCapture(0)  # initialize the camera
+        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:  # Set mediapipe model
+            model = keras.models.load_model(os.path.join('Models', slrUI.languageSel))  # Load trained model
+            while cap.isOpened():  # While cam is opened
+                ret, frame = cap.read()  # Read frame
+                image, results = mediapipe_detection(frame, holistic)  # Make detections
+                draw_landmarks(image, results)  # draw landmarks
+
+                #### Prediction logic
+                keypoints = extract_keypoints(results)  # Extract key points from detections
+                sequence.append(keypoints)  # append keypoints to sequence
+                sequence = sequence[-30:]  # Grab last 30 frames
+
+                if len(sequence) == 30:  # if the length of the sequence is 30
+                    res = model.predict(np.expand_dims(sequence, axis=0))[0]  # run prediction for 1 sequence
+                    predictions.append(np.argmax(res))  # append all predictions
+
+                    #### Visualization logic
+                    if np.unique(predictions[-10:])[0] == np.argmax(
+                            res):  # check that prediction is the same in last 10 frames
+                        if res[np.argmax(res)] > threshold:  # check if result is above threshold
+                            if len(sentence) > 0:  # check that sentence is not empty
+                                if actions[np.argmax(res)] != sentence[-1]:  # check that current detection is not the same as last detection
+                                    sentence.append(actions[np.argmax(res)])  # append sentence
+                                    pred = gTTS(text=actions[np.argmax(res)], lang=language, slow=False)
+                                    pred.save(os.path.join('UtterMP3', "prediction.mp3"))  # save voice line of prediction
+                                    pygame.mixer.music.load(os.path.join('UtterMP3', "prediction.mp3"))
+                                    pygame.mixer.music.play()
+                                    time.sleep(1)
+                                    pygame.mixer.music.unload()
+                            else:
+                                sentence.append(actions[np.argmax(res)])  # append sentence  # append sentence
+                    if len(sentence) > 5:  # if sentence is greater than 5 words
+                        sentence = sentence[-5:]  # grab last 5 values
+
+                cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)  # specify rectangle
+                slrUI.label_prediction.setText(' '.join(sentence))
+                rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                h, w, ch = rgbImage.shape
+                bytesPerLine = ch * w
+                convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+                self.changePixmap.emit(p)
+
+            slrUI.threadState = False
             cap.release()
             cv2.destroyAllWindows()
-            widget.setCurrentIndex(4)
-            teachUI.threadState = False
         return
-class slrWindow(QMainWindow):
+
+
+class SlrWindow(QMainWindow):
     def __init__(self):
-        super(slrWindow, self).__init__()
+        super(SlrWindow, self).__init__()
         loadUi("slrUI.ui", self)
         self.backButton.clicked.connect(self.gotoChooseLanguageSLRWindow)
 
@@ -577,7 +627,7 @@ class slrWindow(QMainWindow):
         self.timer.setInterval(1000)
         self.timer.start()
 
-        self.thslr = slrThread(self)
+        self.thslr = SlrThread(self)
         self.thslr.changePixmap.connect(self.setImage)
 
     @pyqtSlot(QImage)
@@ -597,7 +647,6 @@ class slrWindow(QMainWindow):
         self.threadState = False
 
 
-
 app = QApplication(sys.argv)
 widget = QtWidgets.QStackedWidget()
 
@@ -610,7 +659,7 @@ addnewvoc = AddVocabularyWindow()
 editnewvoc = EditVocabularyWindow()
 teachUI = TeachRecogWindow()
 chooselangSLR = ChooseLanguageSLRWindow()
-slrUI = slrWindow()
+slrUI = SlrWindow()
 
 widget.addWidget(mainwindow)
 widget.addWidget(teachnewvoc)
@@ -627,14 +676,10 @@ widget.setFixedWidth(829)
 widget.setFixedHeight(546)
 widget.show()
 
-
 try:
     sys.exit(app.exec_())
 except:
     print("Exiting")
-
-
-
 
 #### Menu
 #collect_keypoints()
