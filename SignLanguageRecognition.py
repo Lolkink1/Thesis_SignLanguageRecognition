@@ -1,30 +1,24 @@
-import cv2
-import numpy as np
 import os
 import sys
-import pygame
-import multiprocessing
 import time
-import sys
+import cv2
 import mediapipe as mp
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-from PyQt5.QtGui import QImage, QPixmap, QColor
-from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
-from matplotlib import pyplot as plt
-from gtts import gTTS
-from PyQt5.uic import loadUi
-from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QPushButton
-from PyQt5.QtCore import QTimer, QDateTime
+import numpy as np
+import pygame  # Used to play sounds
+from PyQt5.QtGui import QImage, QPixmap, QColor  # UI framework
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot, QObject  # UI framework
+from PyQt5.uic import loadUi  # UI framework
+from PyQt5 import QtWidgets  # UI framework
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,  QMessageBox  # UI framework
+from PyQt5.QtCore import QTimer  # Timer
+from gtts import gTTS  # Google translate API
 from sklearn.model_selection import train_test_split  # creates training partitions
 from tensorflow.keras.utils import to_categorical  # covert data into encoded
-from tensorflow.keras.models import Sequential, load_model  # to create  a sequential nueral network
+from tensorflow.keras.models import Sequential  # to create  a sequential nueral network
 from tensorflow.keras.layers import LSTM, Dense  # LSTM component to build model, allows to use action detection
 from tensorflow.keras.callbacks import TensorBoard  # for logging and tracking
 from tensorflow import keras
-from sklearn.metrics import multilabel_confusion_matrix, accuracy_score  # for evaluation
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 mp_holistic = mp.solutions.holistic  # Holistic model
 mp_drawing = mp.solutions.drawing_utils  # Drawing utilities
@@ -33,6 +27,7 @@ no_sequences = 30  # Thirty videos worth of data
 sequence_length = 30  # Videos are going to be 30 frames in length
 start_folder = 30  # Folder start
 language = 'en'  # Language for text to speech
+
 
 def mediapipe_detection(image, model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # bgr to rgb conversion
@@ -76,7 +71,7 @@ def extract_keypoints(results):
 
 
 def train_lstm_network(trainactions):
-    ##### Pre-process data and create labels
+    # Pre-process data and create labels
     actions = np.array(trainactions)  # Actions to detect
     label_map = {label: num for num, label in enumerate(actions)}
     sequences, labels = [], []  # 2 bank arrays, sequences for feature data, labels for labels
@@ -92,7 +87,7 @@ def train_lstm_network(trainactions):
     Y = to_categorical(labels).astype(int)
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.05)  # setting up training variables
 
-    ##### Building and training LTSM Nueral network model
+    # Building and training LTSM Nueral network model
     log_dir = os.path.join('Logs')
     tb_callback = TensorBoard(log_dir=log_dir)  # variable for monitoring the learning process
 
@@ -111,7 +106,20 @@ def train_lstm_network(trainactions):
     model.fit(X_train, Y_train, epochs=300, callbacks=[tb_callback])  # fit model
     model_name = os.path.join('Models', choosevocab.languageSel)
     model.save(model_name)
+    teachUI.Loadingwidget.setVisible(False)
     return
+
+
+class playAudioFile(QThread):
+    finished = pyqtSignal()
+
+    def run(self):
+        pygame.mixer.init()
+        pygame.mixer.music.load(os.path.join('UtterMP3', "prediction.mp3"))
+        pygame.mixer.music.play()
+        time.sleep(1)
+        pygame.mixer.music.unload()
+        self.finished.emit()
 
 
 # def collect_keypoints():
@@ -148,12 +156,12 @@ def train_lstm_network(trainactions):
 #     return
 
 
-#### Evaluation (confusion matrix and accuracy)
-#yhat = model.predict(X_test)  # predict values
-#ytrue = np.argmax(Y_test, axis=1).tolist()
-#yhat = np.argmax(yhat, axis=1).tolist()
-#multilabel_confusion_matrix(ytrue, yhat)
-#accuracy_score(ytrue, yhat)
+# Evaluation (confusion matrix and accuracy)
+# yhat = model.predict(X_test)  # predict values
+# ytrue = np.argmax(Y_test, axis=1).tolist()
+# yhat = np.argmax(yhat, axis=1).tolist()
+# multilabel_confusion_matrix(ytrue, yhat)
+# accuracy_score(ytrue, yhat)
 # def activate_slr(model):
 #
 #     # Detection variables
@@ -207,9 +215,10 @@ def train_lstm_network(trainactions):
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-        loadUi("Main.ui", self)
+        loadUi(os.path.join('UIpages', "Main.ui"), self)
         self.teachvocButton.clicked.connect(self.gotoTeachNewVocWindow)
         self.activateSLRButton.clicked.connect(self.ChooseLanguageSLRWindow)
+        self.exitButton.clicked.connect(self.ExitApp)
 
     def gotoTeachNewVocWindow(self):
         widget.setCurrentIndex(1)
@@ -217,11 +226,14 @@ class MainWindow(QMainWindow):
     def ChooseLanguageSLRWindow(self):
         widget.setCurrentIndex(8)
 
+    def ExitApp(self):
+        QApplication.quit()
+
 
 class TeachNewVocWindow(QMainWindow):
     def __init__(self):
         super(TeachNewVocWindow, self).__init__()
-        loadUi("TeachNewVoc.ui", self)
+        loadUi(os.path.join('UIpages', "TeachNewVoc.ui"), self)
         self.backButton.clicked.connect(self.gotoMainWindow)
         self.addLangButton.clicked.connect(self.gotoAddLanguageWindow)
         self.languageTable.setColumnWidth(0, 220)
@@ -280,7 +292,7 @@ class TeachNewVocWindow(QMainWindow):
 class AddLanguageWindow(QMainWindow):
     def __init__(self):
         super(AddLanguageWindow, self).__init__()
-        loadUi("insertLanguage.ui", self)
+        loadUi(os.path.join('UIpages', "insertLanguage.ui"), self)
         self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
         self.addButton.clicked.connect(self.addLanguage)
 
@@ -289,6 +301,8 @@ class AddLanguageWindow(QMainWindow):
         if not os.path.exists(os.path.join('SignLanguages', input, 'MP_Data')):
             os.mkdir(os.path.join('SignLanguages', input))
             os.mkdir(os.path.join('SignLanguages', input, 'MP_Data'))
+        else:
+            QMessageBox.critical(self, "Oops..", "It seems the language has already been created")
         widget.setCurrentIndex(1)
 
     def gotoTeachNewVocWindow(self):
@@ -298,7 +312,7 @@ class AddLanguageWindow(QMainWindow):
 class EditLanguageWindow(QMainWindow):
     def __init__(self):
         super(EditLanguageWindow, self).__init__()
-        loadUi("editLanguage.ui", self)
+        loadUi(os.path.join('UIpages', "editLanguage.ui"), self)
         self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
         self.saveButton.clicked.connect(self.editLanguage)
 
@@ -316,7 +330,7 @@ class EditLanguageWindow(QMainWindow):
 class ChooseVocabularyWindow(QMainWindow):
     def __init__(self):
         super(ChooseVocabularyWindow, self).__init__()
-        loadUi("chooseVocabulary.ui", self)
+        loadUi(os.path.join('UIpages', "chooseVocabulary.ui"), self)
         self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
         self.addVocButton.clicked.connect(self.gotoAddVocabularyWindow)
         self.vocabularyTable.setColumnWidth(0, 220)
@@ -341,11 +355,11 @@ class ChooseVocabularyWindow(QMainWindow):
         self.languagelabeltext = "Language: " + str(self.languageSel)
         self.languagelabel.setText(self.languagelabeltext)
         languages = []
-        if os.path.exists(os.path.join('SignLanguages', (self.languageSel), 'MP_Data')):
-            files = os.listdir(os.path.join('SignLanguages', (self.languageSel), 'MP_Data'))
+        if os.path.exists(os.path.join('SignLanguages', self.languageSel, 'MP_Data')):
+            files = os.listdir(os.path.join('SignLanguages', self.languageSel, 'MP_Data'))
             for filename in files:
-                if os.path.exists(os.path.join('SignLanguages', (self.languageSel), 'MP_Data', filename)):
-                    data = os.listdir(os.path.join('SignLanguages', (self.languageSel), 'MP_Data', filename))
+                if os.path.exists(os.path.join('SignLanguages', self.languageSel, 'MP_Data', filename)):
+                    data = os.listdir(os.path.join('SignLanguages', self.languageSel, 'MP_Data', filename))
                     totalVoc = 0
                     for vocabulary in data:
                         totalVoc += 1
@@ -373,7 +387,15 @@ class ChooseVocabularyWindow(QMainWindow):
 
     def gotoTeachRecogWindow(self, row, column):
         item = self.vocabularyTable.item(row, 0)
-        teachUI.vocabularySel = item.text()
+        chosenVoc = item.text()
+        data = os.listdir(os.path.join('SignLanguages', self.languageSel, 'MP_Data', chosenVoc))
+        totalVoc = 0
+        for vocabulary in data:
+            totalVoc += 1
+        if totalVoc > 0:
+            QMessageBox.critical(self, "Already exists",
+                                 "After the data is gathered, it will overwrite existing data for this vocabulary")
+        teachUI.vocabularySel = chosenVoc
         widget.setCurrentIndex(7)
         teachUI.threadState = True
 
@@ -381,7 +403,7 @@ class ChooseVocabularyWindow(QMainWindow):
 class AddVocabularyWindow(QMainWindow):
     def __init__(self):
         super(AddVocabularyWindow, self).__init__()
-        loadUi("insertVocabulary.ui", self)
+        loadUi(os.path.join('UIpages', "insertVocabulary.ui"), self)
         self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
         self.addButton.clicked.connect(self.addVocabulary)
 
@@ -390,16 +412,30 @@ class AddVocabularyWindow(QMainWindow):
         language = choosevocab.languageSel
         if not os.path.exists(os.path.join('SignLanguages', language, 'MP_Data', input)):
             os.mkdir(os.path.join('SignLanguages', language, 'MP_Data', input))
+        else:
+            QMessageBox.critical(self, "Oops..", "It seems the vocabulary has already been created")
         widget.setCurrentIndex(4)
 
     def gotoChooseVocabularyWindow(self):
         widget.setCurrentIndex(4)
 
 
+class ProgressBarThread(QThread):
+    PBValueSig = pyqtSignal(int)
+
+    def run(self):
+        i = 0
+        while i <= 31:
+            i = i + 1
+            value = (i/31) * 100
+            self.PBValueSig.emit(value)
+            time.sleep(1)
+
+
 class EditVocabularyWindow(QMainWindow):
     def __init__(self):
         super(EditVocabularyWindow, self).__init__()
-        loadUi("editVocabulary.ui", self)
+        loadUi(os.path.join('UIpages', "editVocabulary.ui"), self)
         self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
         self.saveButton.clicked.connect(self.editVocabulary)
 
@@ -419,6 +455,7 @@ class TeachingThread(QThread):
 
     def run(self):
         ##### Collect Keypoint Sequences
+        teachUI.Loadingwidget.setVisible(False)
         cap = cv2.VideoCapture(0)
         with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
             action = teachUI.vocabularySel
@@ -428,7 +465,7 @@ class TeachingThread(QThread):
                     image, results = mediapipe_detection(frame, holistic)  # Create detections
                     draw_landmarks(image, results)  # Draw all landmarks
                     if frame_num == 0:
-                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        teachUI.label_sequence.setText('Collecting frames for: "{}", Video Number: {} of 30'.format(action, sequence))
                         cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
                         rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                         h, w, ch = rgbImage.shape
@@ -437,7 +474,7 @@ class TeachingThread(QThread):
                         p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
                         cv2.waitKey(2000)  # wait 2 sec for next sequence
                     else:
-                        teachUI.label_sequence.setText('Collecting frames for {} Video Number {} of 30'.format(action, sequence))
+                        teachUI.label_sequence.setText('Collecting frames for: "{}", Video Number: {} of 30'.format(action, sequence))
                         rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                         h, w, ch = rgbImage.shape
                         bytesPerLine = ch * w
@@ -451,19 +488,23 @@ class TeachingThread(QThread):
                         os.mkdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data', action, str(sequence)))  # create the directory
                     np.save(npy_path, keypoints)  # write the file
                     self.changePixmap.emit(p)
+            teachUI.label_sequence.setText('Please wait...')
+            teachUI.Loadingwidget.setVisible(True)
+            teachUI.progressbarth.start()
             files = os.listdir(os.path.join('SignLanguages', (choosevocab.languageSel), 'MP_Data'))
             train_lstm_network(files)
             cap.release()
             cv2.destroyAllWindows()
             widget.setCurrentIndex(4)
             teachUI.threadState = False
+            teachUI.progressbarth.terminate()
         return
 
 
 class TeachRecogWindow(QMainWindow):
     def __init__(self):
         super(TeachRecogWindow, self).__init__()
-        loadUi("teachUI.ui", self)
+        loadUi(os.path.join('UIpages', "teachUI.ui"), self)
         self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
 
         grey = QPixmap(731, 361)  # create a grey pixmap
@@ -480,6 +521,13 @@ class TeachRecogWindow(QMainWindow):
 
         self.th = TeachingThread(self)
         self.th.changePixmap.connect(self.setImage)
+
+        self.progressbarth = ProgressBarThread(self)
+        self.progressbarth.PBValueSig.connect(self.updateProgressBar)
+
+    @pyqtSlot(int)
+    def updateProgressBar(self, value):
+        self.progressBar.setValue(value)
 
     @pyqtSlot(QImage)
     def setImage(self, image):
@@ -501,7 +549,7 @@ class TeachRecogWindow(QMainWindow):
 class ChooseLanguageSLRWindow(QMainWindow):
     def __init__(self):
         super(ChooseLanguageSLRWindow, self).__init__()
-        loadUi("chooseLanguageSLR.ui", self)
+        loadUi(os.path.join('UIpages', "chooseLanguageSLR.ui"), self)
         self.backButton.clicked.connect(self.gotoMainWindow)
         self.languageTable.setColumnWidth(0, 220)
         self.languageTable.setColumnWidth(1, 200)
@@ -525,15 +573,16 @@ class ChooseLanguageSLRWindow(QMainWindow):
                     totalVoc += 1
             else:
                 totalVoc = 0
-            languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei"})
+            if os.path.exists(os.path.join('Models', filename)):
+                languages.append({"Language": filename, "Vocabulary Amount": str(totalVoc), "Created By": "Alexei"})
 
-        row = 0
-        self.languageTable.setRowCount(len(languages))
-        for language in languages:
-            self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
-            self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
-            self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
-            row = row+1
+            row = 0
+            self.languageTable.setRowCount(len(languages))
+            for language in languages:
+                self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
+                self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
+                self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+                row = row+1
 
     def gotoMainWindow(self):
         widget.setCurrentIndex(0)
@@ -556,7 +605,6 @@ class SlrThread(QThread):
         threshold = 0.7
         slractions = os.listdir(os.path.join('SignLanguages', (slrUI.languageSel), 'MP_Data'))
         actions = np.array(slractions)  # Actions to detect
-        pygame.mixer.init()
 
         #### SLR
         cap = cv2.VideoCapture(0)  # initialize the camera
@@ -585,15 +633,13 @@ class SlrThread(QThread):
                                     sentence.append(actions[np.argmax(res)])  # append sentence
                                     pred = gTTS(text=actions[np.argmax(res)], lang=language, slow=False)
                                     pred.save(os.path.join('UtterMP3', "prediction.mp3"))  # save voice line of prediction
-                                    pygame.mixer.music.load(os.path.join('UtterMP3', "prediction.mp3"))
-                                    pygame.mixer.music.play()
-                                    time.sleep(1)
-                                    pygame.mixer.music.unload()
+                                    self.thplay = playAudioFile(self)
+                                    self.thplay.finished.connect(self.thplay.quit)
+                                    self.thplay.start()
                             else:
                                 sentence.append(actions[np.argmax(res)])  # append sentence  # append sentence
                     if len(sentence) > 5:  # if sentence is greater than 5 words
                         sentence = sentence[-5:]  # grab last 5 values
-
                 cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)  # specify rectangle
                 slrUI.label_prediction.setText(' '.join(sentence))
                 rgbImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -602,7 +648,6 @@ class SlrThread(QThread):
                 convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
                 p = convertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
                 self.changePixmap.emit(p)
-
             slrUI.threadState = False
             cap.release()
             cv2.destroyAllWindows()
@@ -612,7 +657,7 @@ class SlrThread(QThread):
 class SlrWindow(QMainWindow):
     def __init__(self):
         super(SlrWindow, self).__init__()
-        loadUi("slrUI.ui", self)
+        loadUi(os.path.join('UIpages', "slrUI.ui"), self)
         self.backButton.clicked.connect(self.gotoChooseLanguageSLRWindow)
 
         grey = QPixmap(731, 361)  # create a grey pixmap
@@ -680,9 +725,3 @@ try:
     sys.exit(app.exec_())
 except:
     print("Exiting")
-
-#### Menu
-#collect_keypoints()
-#trained_model = train_lstm_network()
-#activate_slr(trained_model)
-
