@@ -6,7 +6,7 @@ import mediapipe as mp
 import numpy as np
 import pygame  # Used to play sounds
 from PyQt5.QtGui import QImage, QPixmap, QColor  # UI framework
-from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot, QObject  # UI framework
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot  # UI framework
 from PyQt5.uic import loadUi  # UI framework
 from PyQt5 import QtWidgets  # UI framework
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,  QMessageBox  # UI framework
@@ -241,10 +241,6 @@ class TeachNewVocWindow(QMainWindow):
         self.languageTable.setColumnWidth(2, 150)
         self.languageTable.setColumnWidth(3, 100)
 
-        self.editbtn = QPushButton(self.languageTable)
-        self.editbtn.setText('edit')
-        self.editbtn.clicked.connect(self.gotoEditLanguageWindow)
-
         self.languageTable.cellDoubleClicked.connect(self.gotoChooseVocabularyWindow)
 
         self.timer = QTimer()
@@ -271,7 +267,12 @@ class TeachNewVocWindow(QMainWindow):
             self.languageTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Language"]))
             self.languageTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
             self.languageTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+
+            self.editbtn = QPushButton()
+            self.editbtn.setText('edit')
             self.languageTable.setCellWidget(row, 3, self.editbtn)
+            self.editbtn.clicked.connect(lambda *args, row=row, column=3: self.gotoEditLanguageWindow(row, column))
+
             row = row+1
 
     def gotoMainWindow(self):
@@ -280,7 +281,9 @@ class TeachNewVocWindow(QMainWindow):
     def gotoAddLanguageWindow(self):
         widget.setCurrentIndex(2)
 
-    def gotoEditLanguageWindow(self):
+    def gotoEditLanguageWindow(self, row, column):
+        item = self.languageTable.item(row, 0)
+        editnewlang.languageSel = item.text()
         widget.setCurrentIndex(3)
 
     def gotoChooseVocabularyWindow(self, row, column):
@@ -315,12 +318,16 @@ class EditLanguageWindow(QMainWindow):
         loadUi(os.path.join('UIpages', "editLanguage.ui"), self)
         self.backButton.clicked.connect(self.gotoTeachNewVocWindow)
         self.saveButton.clicked.connect(self.editLanguage)
+        self.languageSel = ''
 
     def editLanguage(self):
-        input = self.languageInput.text()
-        if not os.path.exists(os.path.join('SignLanguages', input, 'MP_Data')):
-            os.mkdir(os.path.join('SignLanguages', input))
-            os.mkdir(os.path.join('SignLanguages', input, 'MP_Data'))
+        input = self.editlanguageInput.text()
+        if not os.path.exists(os.path.join('SignLanguages', input)):
+            os.rename(os.path.join('SignLanguages', self.languageSel), os.path.join('SignLanguages', input))
+            if os.path.exists(os.path.join('Models', self.languageSel)):
+                os.rename(os.path.join('Models', self.languageSel), os.path.join('Models', input))
+        else:
+            QMessageBox.critical(self, "Oops..", "It seems the language has already been created")
         widget.setCurrentIndex(1)
 
     def gotoTeachNewVocWindow(self):
@@ -339,11 +346,6 @@ class ChooseVocabularyWindow(QMainWindow):
         self.vocabularyTable.setColumnWidth(3, 100)
 
         self.languageSel = ''
-
-        self.editbtn = QPushButton(self.vocabularyTable)
-        self.editbtn.setText('edit')
-        self.editbtn.clicked.connect(self.gotoEditVocabularyWindow)
-
         self.vocabularyTable.cellDoubleClicked.connect(self.gotoTeachRecogWindow)
 
         self.timer = QTimer()
@@ -373,7 +375,12 @@ class ChooseVocabularyWindow(QMainWindow):
             self.vocabularyTable.setItem(row, 0, QtWidgets.QTableWidgetItem(language["Vocabulary"]))
             self.vocabularyTable.setItem(row, 1, QtWidgets.QTableWidgetItem(language["Vocabulary Amount"]))
             self.vocabularyTable.setItem(row, 2, QtWidgets.QTableWidgetItem(language["Created By"]))
+
+            self.editbtn = QPushButton()
+            self.editbtn.setText('edit')
             self.vocabularyTable.setCellWidget(row, 3, self.editbtn)
+            self.editbtn.clicked.connect(lambda *args, row=row, column=3: self.gotoEditVocabularyWindow(row, column))
+
             row = row + 1
 
     def gotoTeachNewVocWindow(self):
@@ -382,7 +389,9 @@ class ChooseVocabularyWindow(QMainWindow):
     def gotoAddVocabularyWindow(self):
         widget.setCurrentIndex(5)
 
-    def gotoEditVocabularyWindow(self):
+    def gotoEditVocabularyWindow(self, row, column):
+        item = self.vocabularyTable.item(row, 0)
+        editnewvoc.languageSel = item.text()
         widget.setCurrentIndex(6)
 
     def gotoTeachRecogWindow(self, row, column):
@@ -420,6 +429,27 @@ class AddVocabularyWindow(QMainWindow):
         widget.setCurrentIndex(4)
 
 
+class EditVocabularyWindow(QMainWindow):
+    def __init__(self):
+        super(EditVocabularyWindow, self).__init__()
+        loadUi(os.path.join('UIpages', "editVocabulary.ui"), self)
+        self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
+        self.saveButton.clicked.connect(self.editVocabulary)
+        self.languageSel = ''
+
+    def editVocabulary(self):
+        input = self.editvocabularyInput.text()
+        language = choosevocab.languageSel
+        if not os.path.exists(os.path.join('SignLanguages', language, 'MP_Data', input)):
+            os.rename(os.path.join('SignLanguages', language, 'MP_Data', self.languageSel), os.path.join('SignLanguages', language, 'MP_Data', input))
+        else:
+            QMessageBox.critical(self, "Oops..", "It seems the language has already been created")
+        widget.setCurrentIndex(4)
+
+    def gotoChooseVocabularyWindow(self):
+        widget.setCurrentIndex(4)
+
+
 class ProgressBarThread(QThread):
     PBValueSig = pyqtSignal(int)
 
@@ -430,24 +460,6 @@ class ProgressBarThread(QThread):
             value = (i/31) * 100
             self.PBValueSig.emit(value)
             time.sleep(1)
-
-
-class EditVocabularyWindow(QMainWindow):
-    def __init__(self):
-        super(EditVocabularyWindow, self).__init__()
-        loadUi(os.path.join('UIpages', "editVocabulary.ui"), self)
-        self.backButton.clicked.connect(self.gotoChooseVocabularyWindow)
-        self.saveButton.clicked.connect(self.editVocabulary)
-
-    def editVocabulary(self):
-        input = self.editvocabularyInput.text()
-        language = choosevocab.languageSel
-        if not os.path.exists(os.path.join('SignLanguages', language, 'MP_Data', input)):
-            os.mkdir(os.path.join('SignLanguages', language, 'MP_Data', input))
-        widget.setCurrentIndex(4)
-
-    def gotoChooseVocabularyWindow(self):
-        widget.setCurrentIndex(4)
 
 
 class TeachingThread(QThread):
