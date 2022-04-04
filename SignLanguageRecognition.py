@@ -31,6 +31,12 @@ sequence_length = 30  # Videos are going to be 30 frames in length
 start_folder = 30  # Folder start
 language = 'en'  # Language for text to speech
 
+#onedrive parameters
+redirect_uri = 'http://localhost:8080/'
+client_secret = 'Pbb7Q~5ey0wF0yRxHtGOg17LFrAEhKGxi6w9i'
+scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
+onedrive_client = onedrivesdk_fork.get_default_client(client_id='d66a03ed-ebed-48db-91c2-02238787f788', scopes=scopes)
+
 
 def mediapipe_detection(image, model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # bgr to rgb conversion
@@ -89,7 +95,7 @@ def train_lstm_network(trainactions):
             labels.append(label_map[action])  # add sequence to labels array
     X = np.array(sequences)
     Y = to_categorical(labels).astype(int)
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.05)  # setting up training variables
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.5)  # setting up training variables
 
     # Building and training LTSM Nueral network model
     log_dir = os.path.join('Logs')
@@ -107,7 +113,7 @@ def train_lstm_network(trainactions):
 
     model.compile(optimizer='Adam', loss='categorical_crossentropy',
                   metrics=['categorical_accuracy'])  # Compile neural model
-    model.fit(X_train, Y_train, epochs=150, callbacks=[tb_callback])  # fit model
+    model.fit(X_train, Y_train, epochs=300, callbacks=[tb_callback])  # fit model
     model_name = os.path.join('Models', choosevocab.languageSel)
     model.save(model_name)
     teachUI.Loadingwidget.setVisible(False)
@@ -123,7 +129,7 @@ def zip_dir():
             file_paths.append(filepath)
 
     # writing files to a zipfile
-    with ZipFile(os.path.join('SignLanguages', 'zippedData.zip'), 'w') as zip:
+    with ZipFile(os.path.join('zippedData.zip'), 'w') as zip:
         # writing each file one by one
         for file in file_paths:
             zip.write(file)
@@ -135,29 +141,20 @@ def unzip_dir():
 
 
 def onedrive_authenticate():
-    redirect_uri = 'http://localhost:8080/'
-    client_secret = 'Pbb7Q~5ey0wF0yRxHtGOg17LFrAEhKGxi6w9i'
-    scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
-    client = onedrivesdk_fork.get_default_client(client_id='d66a03ed-ebed-48db-91c2-02238787f788', scopes=scopes)
-    auth_url = client.auth_provider.get_auth_url(redirect_uri)
+    try:
+        auth_url = onedrive_client.auth_provider.get_auth_url(redirect_uri)
 
-    # this will block until we have the code
-    code = GetAuthCodeServer.get_auth_code(auth_url, redirect_uri)
+        # this will block until we have the code
+        code = GetAuthCodeServer.get_auth_code(auth_url, redirect_uri)
+        onedrive_client.auth_provider.authenticate(code, redirect_uri, client_secret)
 
-    client.auth_provider.authenticate(code, redirect_uri, client_secret)
-
-    # zip and upload
-    # zip_dir()
-    # path_to_zip = os.path.join('SignLanguages', 'zippedData.zip')
-    # client.item(drive='me', id='root').children['SLR_data'].delete()
-    # client.item(drive='me', id='root').children['SLR_data'].upload(path_to_zip)
-    # os.remove(os.path.join('SignLanguages', 'zippedData.zip'))
-
-    # download and unzip
-    path_to_zip = os.path.join('TempZippedData.zip')
-    client.item(drive='me', id='root').children['SLR_data'].download(path_to_zip)
-    unzip_dir()
-    os.remove(os.path.join('TempZippedData.zip'))
+        # download and unzip
+        path_to_zip = os.path.join('TempZippedData.zip')
+        onedrive_client.item(drive='me', id='root').children['SLR_data'].download(path_to_zip)
+        unzip_dir()
+        os.remove(path_to_zip)
+    except:
+        QMessageBox.critical(mainwindow, "Oops..", "It seems OneDrive data is not reachable, restart application to solve")  # display error message
 
 
 class playAudioFile(QThread):
@@ -277,8 +274,7 @@ class MainWindow(QMainWindow):
         widget.setCurrentIndex(8)
 
     def ExitApp(self):
-        # QApplication.quit()
-        onedrive_authenticate()
+        QApplication.quit()
 
 
 class TeachNewVocWindow(QMainWindow):
@@ -557,7 +553,15 @@ class TeachingThread(QThread):
             teachUI.label_sequence.setText('Please wait...')
             teachUI.Loadingwidget.setVisible(True)
             teachUI.progressbarth.start()
-            files = os.listdir(os.path.join('SignLanguages', (choosevocab.languageSel), 'MP_Data'))
+
+            # zip and upload
+            zip_dir()
+            path_to_zip = os.path.join('zippedData.zip')
+            onedrive_client.item(drive='me', id='root').children['SLR_data'].delete()
+            onedrive_client.item(drive='me', id='root').children['SLR_data'].upload(path_to_zip)
+            os.remove(path_to_zip)
+
+            files = os.listdir(os.path.join('SignLanguages', choosevocab.languageSel, 'MP_Data'))
             train_lstm_network(files)
             cap.release()
             cv2.destroyAllWindows()
@@ -788,6 +792,7 @@ widget.addWidget(slrUI)
 widget.setFixedWidth(829)
 widget.setFixedHeight(546)
 widget.show()
+onedrive_authenticate()
 
 try:
     sys.exit(app.exec_())
