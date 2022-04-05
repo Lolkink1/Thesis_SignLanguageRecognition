@@ -154,7 +154,17 @@ def onedrive_authenticate():
         unzip_dir()
         os.remove(path_to_zip)
     except:
-        QMessageBox.critical(mainwindow, "Oops..", "It seems OneDrive data is not reachable, restart application to solve")  # display error message
+        QMessageBox.critical(mainwindow, "Oops..", "It seems OneDrive data is not reachable, restart application to retry")  # display error message
+        mainwindow.connectionLabel.setText("Not Connected")
+        teachnewvoc.connectionLabel.setText("Not Connected")
+        addnewlang.connectionLabel.setText("Not Connected")
+        editnewlang.connectionLabel.setText("Not Connected")
+        choosevocab.connectionLabel.setText("Not Connected")
+        addnewvoc.connectionLabel.setText("Not Connected")
+        editnewvoc.connectionLabel.setText("Not Connected")
+        teachUI.connectionLabel.setText("Not Connected")
+        chooselangSLR.connectionLabel.setText("Not Connected")
+        slrUI.connectionLabel.setText("Not Connected")
 
 
 class playAudioFile(QThread):
@@ -167,96 +177,6 @@ class playAudioFile(QThread):
         time.sleep(1)
         pygame.mixer.music.unload()
         self.finished.emit()
-
-
-# def collect_keypoints():
-#     ##### Collect Keypoint Sequences
-#     cap = cv2.VideoCapture(0)
-#     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-#         for action in actions:  # Loop through all actions (signs)
-#             for sequence in range(no_sequences):  # Loop through all sequences (videos)
-#                 for frame_num in range(sequence_length):  # Loop through sequence length (frames)
-#                     ret, frame = cap.read()  # Read camera feed
-#                     image, results = mediapipe_detection(frame, holistic)  # Create detections
-#                     draw_landmarks(image, results)  # Draw all landmarks
-#                     if frame_num == 0:
-#                         cv2.putText(image, 'STARTING COLLECTION', (120, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)
-#                         cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
-#                                     (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-#                         cv2.imshow('webcam_feed', image)  # Show to screen
-#                         cv2.waitKey(2000)  # wait 2 sec for next sequence
-#                     else:
-#                         cv2.putText(image, 'Collecting frames for {} Video Number {} of 30'.format(action, sequence),
-#                                     (15, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-#                         cv2.imshow('webcam_feed', image)  # Show to screen
-#                     keypoints = extract_keypoints(results)  # Export keypoint data
-#                     npy_path = os.path.join(DATA_PATH, action, str(sequence), str(frame_num))
-#                     if not (os.path.exists(os.path.join(DATA_PATH, action))):  # check the ACTION directory does not exist
-#                         os.mkdir(os.path.join(DATA_PATH, action))  # create the directory
-#                     if not (os.path.exists(os.path.join(DATA_PATH, action, str(sequence)))):  # check the SEQUENCE directory does not exist
-#                         os.mkdir(os.path.join(DATA_PATH, action, str(sequence)))  # create the directory
-#                     np.save(npy_path, keypoints)  # write the file
-#                     if cv2.waitKey(10) & 0xFF == ord('q'):  # Break loop if user press q
-#                         break
-#         cap.release()
-#         cv2.destroyAllWindows()
-#     return
-
-
-# Evaluation (confusion matrix and accuracy)
-# yhat = model.predict(X_test)  # predict values
-# ytrue = np.argmax(Y_test, axis=1).tolist()
-# yhat = np.argmax(yhat, axis=1).tolist()
-# multilabel_confusion_matrix(ytrue, yhat)
-# accuracy_score(ytrue, yhat)
-# def activate_slr(model):
-#
-#     # Detection variables
-#     sequence = []
-#     sentence = []
-#     predictions = []
-#     threshold = 0.7
-#
-#     #### SLR
-#     cap = cv2.VideoCapture(0)  # initialize the camera
-#     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:  # Set mediapipe model
-#         while cap.isOpened():  # While cam is opened
-#             ret, frame = cap.read()  # Read frame
-#             image, results = mediapipe_detection(frame, holistic)  # Make detections
-#             draw_landmarks(image, results)  # draw landmarks
-#
-#             #### Prediction logic
-#             keypoints = extract_keypoints(results)  # Extract key points from detections
-#             sequence.append(keypoints)  # append keypoints to sequence
-#             sequence = sequence[-30:]  # Grab last 30 frames
-#             #model.load_weights('action.h5')  # Load trained model
-#
-#             if len(sequence) == 30:  # if the length of the sequence is 30
-#                 res = model.predict(np.expand_dims(sequence, axis=0))[0]  # run prediction for 1 sequence
-#                 predictions.append(np.argmax(res))  # append all predictions
-#
-#                 #### Visualization logic
-#                 if np.unique(predictions[-10:])[0] == np.argmax(res):  # check that prediction is the same in last 10 frames
-#                     if res[np.argmax(res)] > threshold:  # check if result is above threshold
-#                         if len(sentence) > 0:  # check that sentence is not empty
-#                             if actions[np.argmax(res)] != sentence[-1]:  # check that current detection is not the same as last detection
-#                                 sentence.append(actions[np.argmax(res)])  # append sentence
-#                         else:
-#                             sentence.append(actions[np.argmax(res)])  # append sentence  # append sentence
-#
-#                 if len(sentence) > 5:  # if sentence is greater than 5 words
-#                     sentence = sentence[-5:]  # grab last 5 values
-#
-#             cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)  # specify rectangle
-#             cv2.putText(image, ' '.join(sentence), (3, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)  # Render sentence with space
-#             cv2.imshow('webcam_feed', image)  # Show to screen
-#
-#             #### Break logic
-#             if cv2.waitKey(10) & 0xFF == ord('q'):
-#                 break
-#         cap.release()
-#         cv2.destroyAllWindows()
-#     return
 
 
 class MainWindow(QMainWindow):
@@ -763,6 +683,8 @@ class SlrWindow(QMainWindow):
         widget.setCurrentIndex(8)
         self.threadState = False
 
+
+# GUI control declaration
 
 app = QApplication(sys.argv)
 widget = QtWidgets.QStackedWidget()
